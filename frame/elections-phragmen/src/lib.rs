@@ -99,6 +99,9 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use codec::{Decode, Encode};
+use frame_election_provider_support::{
+	ElectionDataProvider, ElectionProvider, ElectionProviderBase, NposSolution,
+};
 use frame_support::{
 	traits::{
 		defensive_prelude::*, ChangeMembers, Contains, ContainsLengthBound, Currency,
@@ -267,6 +270,25 @@ pub mod pallet {
 
 		/// Weight information for extrinsics in this pallet.
 		type WeightInfo: WeightInfo;
+
+		/// Maximum number of votes per voter that allowed by the election data provider.
+		#[pallet::constant]
+		type MaxVotesPerVoter: Get<u32>;
+
+		/// Something that will provide the election data.
+		type DataProvider: ElectionDataProvider<
+			AccountId = Self::AccountId,
+			BlockNumber = Self::BlockNumber,
+			MaxVotesPerVoter = Self::MaxVotesPerVoter,
+		>;
+
+		/// Something that will calculate the election results based on the data provided by
+		/// Self::DataProvider.
+		type ElectionProvider: ElectionProvider<
+			AccountId = Self::AccountId,
+			BlockNumber = Self::BlockNumber,
+			DataProvider = Self::DataProvider,
+		>;
 	}
 
 	#[pallet::hooks]
@@ -277,7 +299,7 @@ pub mod pallet {
 		fn on_initialize(n: T::BlockNumber) -> Weight {
 			let term_duration = T::TermDuration::get();
 			if !term_duration.is_zero() && (n % term_duration).is_zero() {
-				Self::do_phragmen()
+				Self::do_election()
 			} else {
 				Weight::zero()
 			}
@@ -518,7 +540,7 @@ pub mod pallet {
 			Self::deposit_event(Event::MemberKicked { member: who });
 
 			if rerun_election {
-				Self::do_phragmen();
+				Self::do_election();
 			}
 
 			// no refund needed.
@@ -890,6 +912,24 @@ impl<T: Config> Pallet<T> {
 		debug_assert!(_remainder.is_zero());
 	}
 
+	/// Run the election with all required side processes and state updates, if election succeeds.
+	/// Else, it will emit an `ElectionError` event.
+	///
+	/// Calls the appropriate [`ChangeMembers`] function variant internally.
+	fn do_election() -> Weight {
+		T::ElectionProvider::elect().map_err(|e| {
+			log::error!(
+				target: "runtime::elections-generic",
+				"Failed to run election [{:?}].",
+				e,
+			);
+			Self::deposit_event(Event::ElectionError);
+		});
+
+		// TODO(gpestana): calculate and return correct election weight
+		Weight::zero()
+	}
+
 	/// Run the phragmen election with all required side processes and state updates, if election
 	/// succeeds. Else, it will emit an `ElectionError` event.
 	///
@@ -905,7 +945,7 @@ impl<T: Config> Pallet<T> {
 
 		if candidates_and_deposit.len().is_zero() {
 			Self::deposit_event(Event::EmptyTerm);
-			return T::DbWeight::get().reads(3)
+			return T::DbWeight::get().reads(3);
 		}
 
 		// All of the new winners that come out of phragmen will thus have a deposit recorded.
@@ -937,7 +977,7 @@ impl<T: Config> Pallet<T> {
 					"Failed to run election. Number of voters exceeded",
 				);
 				Self::deposit_event(Event::ElectionError);
-				return T::DbWeight::get().reads(3 + max_voters as u64)
+				return T::DbWeight::get().reads(3 + max_voters as u64);
 			},
 		}
 
@@ -1044,8 +1084,8 @@ impl<T: Config> Pallet<T> {
 					// All candidates/members/runners-up who are no longer retaining a position as a
 					// seat holder will lose their bond.
 					candidates_and_deposit.iter().for_each(|(c, d)| {
-						if new_members_ids_sorted.binary_search(c).is_err() &&
-							new_runners_up_ids_sorted.binary_search(c).is_err()
+						if new_members_ids_sorted.binary_search(c).is_err()
+							&& new_runners_up_ids_sorted.binary_search(c).is_err()
 						{
 							let (imbalance, _) = T::Currency::slash_reserved(c, *d);
 							T::LoserCandidate::on_unbalanced(imbalance);
@@ -1277,6 +1317,7 @@ mod tests {
 		pub const ElectionsPhragmenPalletId: LockIdentifier = *b"phrelect";
 		pub const PhragmenMaxVoters: u32 = 1000;
 		pub const PhragmenMaxCandidates: u32 = 100;
+		pub const MaxVotesPerVoter: u32 = 100;
 	}
 
 	impl Config for Test {
@@ -1297,11 +1338,69 @@ mod tests {
 		type WeightInfo = ();
 		type MaxVoters = PhragmenMaxVoters;
 		type MaxCandidates = PhragmenMaxCandidates;
+		type MaxVotesPerVoter = MaxVotesPerVoter;
+		type ElectionProvider = TestElectionProvider;
+		type DataProvider = TestDataProvider;
 	}
 
 	pub type Block = sp_runtime::generic::Block<Header, UncheckedExtrinsic>;
 	pub type UncheckedExtrinsic =
 		sp_runtime::generic::UncheckedExtrinsic<u32, u64, RuntimeCall, ()>;
+	pub type AccountId = u64;
+	pub type BlockNumber = u64;
+
+	pub struct TestElectionProvider;
+	impl ElectionProviderBase for TestElectionProvider {
+		type AccountId = AccountId;
+		type BlockNumber = BlockNumber;
+		type Error = &'static str;
+		type DataProvider = TestDataProvider;
+
+		fn ongoing() -> bool {
+			false
+		}
+	}
+
+	impl ElectionProvider for TestElectionProvider {
+		fn elect() -> Result<frame_election_provider_support::Supports<Self::AccountId>, Self::Error>
+		{
+			// TODO(gpestana): do something
+			Err("noop")
+		}
+	}
+
+	pub struct TestDataProvider;
+	impl ElectionDataProvider for TestDataProvider {
+		type AccountId = AccountId;
+		type BlockNumber = BlockNumber;
+		type MaxVotesPerVoter = MaxVotesPerVoter;
+
+		fn electable_targets(
+			maybe_max_len: Option<usize>,
+		) -> frame_election_provider_support::data_provider::Result<Vec<Self::AccountId>> {
+			// TODO(gpestana): implement
+			Ok(vec![])
+		}
+
+		fn electing_voters(
+			maybe_max_len: Option<usize>,
+		) -> frame_election_provider_support::data_provider::Result<
+			Vec<frame_election_provider_support::VoterOf<Self>>,
+		> {
+			// TODO(gpestana): implement
+			Ok(vec![])
+		}
+
+		fn desired_targets() -> frame_election_provider_support::data_provider::Result<u32> {
+			// TODO(gpestana): implement
+			Ok(0)
+		}
+
+		fn next_election_prediction(now: Self::BlockNumber) -> Self::BlockNumber {
+			// TODO(gpestana): implement
+			0
+		}
+	}
 
 	frame_support::construct_runtime!(
 		pub enum Test where
