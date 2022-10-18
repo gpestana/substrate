@@ -98,10 +98,10 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+use core::marker::PhantomData;
+
 use codec::{Decode, Encode};
-use frame_election_provider_support::{
-	ElectionDataProvider, ElectionProvider, ElectionProviderBase, NposSolution,
-};
+use frame_election_provider_support::{ElectionDataProvider, ElectionProvider, NposSolver};
 use frame_support::{
 	traits::{
 		defensive_prelude::*, ChangeMembers, Contains, ContainsLengthBound, Currency,
@@ -124,6 +124,14 @@ pub use weights::WeightInfo;
 
 /// All migrations.
 pub mod migrations;
+
+/// The election module, implementing an ElectionProvider and ElectionDataProvider that can
+/// be used by this pallet.
+pub mod election;
+
+/// Mock implementations for testing
+#[cfg(test)]
+pub mod mock;
 
 /// The maximum votes allowed per voter.
 pub const MAXIMUM_VOTE: usize = 16;
@@ -289,6 +297,9 @@ pub mod pallet {
 			BlockNumber = Self::BlockNumber,
 			DataProvider = Self::DataProvider,
 		>;
+
+		// Something that can compute the result of a NPoS solution.
+		type Solver: NposSolver<AccountId = Self::AccountId>;
 	}
 
 	#[pallet::hooks]
@@ -917,6 +928,8 @@ impl<T: Config> Pallet<T> {
 	///
 	/// Calls the appropriate [`ChangeMembers`] function variant internally.
 	fn do_election() -> Weight {
+		println!("ElectionProvider:_do_election()");
+
 		T::ElectionProvider::elect().map_err(|e| {
 			log::error!(
 				target: "runtime::elections-generic",
@@ -1197,6 +1210,7 @@ impl<T: Config> ContainsLengthBound for Pallet<T> {
 mod tests {
 	use super::*;
 	use crate as elections_phragmen;
+	use frame_election_provider_support::{ElectionProviderBase, SequentialPhragmen};
 	use frame_support::{
 		assert_noop, assert_ok,
 		dispatch::DispatchResultWithPostInfo,
@@ -1339,8 +1353,15 @@ mod tests {
 		type MaxVoters = PhragmenMaxVoters;
 		type MaxCandidates = PhragmenMaxCandidates;
 		type MaxVotesPerVoter = MaxVotesPerVoter;
-		type ElectionProvider = TestElectionProvider;
-		type DataProvider = TestDataProvider;
+		type ElectionProvider = election::BoundedExecution<SeqPhragmen>;
+		type DataProvider = mock::DataProvider;
+		type Solver = SequentialPhragmen<AccountId, Perbill>;
+	}
+
+	pub struct SeqPhragmen;
+	impl election::Config for SeqPhragmen {
+		type System = Test;
+		type DataProvider = mock::DataProvider;
 	}
 
 	pub type Block = sp_runtime::generic::Block<Header, UncheckedExtrinsic>;
@@ -1348,59 +1369,6 @@ mod tests {
 		sp_runtime::generic::UncheckedExtrinsic<u32, u64, RuntimeCall, ()>;
 	pub type AccountId = u64;
 	pub type BlockNumber = u64;
-
-	pub struct TestElectionProvider;
-	impl ElectionProviderBase for TestElectionProvider {
-		type AccountId = AccountId;
-		type BlockNumber = BlockNumber;
-		type Error = &'static str;
-		type DataProvider = TestDataProvider;
-
-		fn ongoing() -> bool {
-			false
-		}
-	}
-
-	impl ElectionProvider for TestElectionProvider {
-		fn elect() -> Result<frame_election_provider_support::Supports<Self::AccountId>, Self::Error>
-		{
-			// TODO(gpestana): do something
-			Err("noop")
-		}
-	}
-
-	pub struct TestDataProvider;
-	impl ElectionDataProvider for TestDataProvider {
-		type AccountId = AccountId;
-		type BlockNumber = BlockNumber;
-		type MaxVotesPerVoter = MaxVotesPerVoter;
-
-		fn electable_targets(
-			maybe_max_len: Option<usize>,
-		) -> frame_election_provider_support::data_provider::Result<Vec<Self::AccountId>> {
-			// TODO(gpestana): implement
-			Ok(vec![])
-		}
-
-		fn electing_voters(
-			maybe_max_len: Option<usize>,
-		) -> frame_election_provider_support::data_provider::Result<
-			Vec<frame_election_provider_support::VoterOf<Self>>,
-		> {
-			// TODO(gpestana): implement
-			Ok(vec![])
-		}
-
-		fn desired_targets() -> frame_election_provider_support::data_provider::Result<u32> {
-			// TODO(gpestana): implement
-			Ok(0)
-		}
-
-		fn next_election_prediction(now: Self::BlockNumber) -> Self::BlockNumber {
-			// TODO(gpestana): implement
-			0
-		}
-	}
 
 	frame_support::construct_runtime!(
 		pub enum Test where
