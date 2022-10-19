@@ -928,7 +928,7 @@ impl<T: Config> Pallet<T> {
 	///
 	/// Calls the appropriate [`ChangeMembers`] function variant internally.
 	fn do_election() -> Weight {
-		println!("ElectionProvider:_do_election()");
+		//let rv = T::DataProvider::desired_targets();
 
 		T::ElectionProvider::elect().map_err(|e| {
 			log::error!(
@@ -939,7 +939,7 @@ impl<T: Config> Pallet<T> {
 			Self::deposit_event(Event::ElectionError);
 		});
 
-		// TODO(gpestana): calculate and return correct election weight
+		// TODO(gpestana): return correct election weight
 		Weight::zero()
 	}
 
@@ -1210,14 +1210,17 @@ impl<T: Config> ContainsLengthBound for Pallet<T> {
 mod tests {
 	use super::*;
 	use crate as elections_phragmen;
-	use frame_election_provider_support::{ElectionProviderBase, SequentialPhragmen};
+	use frame_election_provider_support::{
+		onchain::{BoundedConfig, BoundedExecution},
+		ElectionProviderBase, SequentialPhragmen,
+	};
 	use frame_support::{
 		assert_noop, assert_ok,
 		dispatch::DispatchResultWithPostInfo,
 		parameter_types,
 		traits::{ConstU32, ConstU64, OnInitialize},
 	};
-	use frame_system::ensure_signed;
+	use frame_system::{ensure_signed, Account};
 	use sp_core::H256;
 	use sp_runtime::{
 		testing::Header,
@@ -1353,15 +1356,10 @@ mod tests {
 		type MaxVoters = PhragmenMaxVoters;
 		type MaxCandidates = PhragmenMaxCandidates;
 		type MaxVotesPerVoter = MaxVotesPerVoter;
-		type ElectionProvider = election::BoundedExecution<SeqPhragmen>;
-		type DataProvider = mock::DataProvider;
+		type ElectionProvider = BoundedExecution<ElectionConfig>;
+		//type DataProvider = mock::DataProvider;
+		type DataProvider = election::DataProvider<DataProviderConfig>;
 		type Solver = SequentialPhragmen<AccountId, Perbill>;
-	}
-
-	pub struct SeqPhragmen;
-	impl election::Config for SeqPhragmen {
-		type System = Test;
-		type DataProvider = mock::DataProvider;
 	}
 
 	pub type Block = sp_runtime::generic::Block<Header, UncheckedExtrinsic>;
@@ -1369,6 +1367,34 @@ mod tests {
 		sp_runtime::generic::UncheckedExtrinsic<u32, u64, RuntimeCall, ()>;
 	pub type AccountId = u64;
 	pub type BlockNumber = u64;
+
+	pub struct ElectionConfig;
+	impl frame_election_provider_support::onchain::Config for ElectionConfig {
+		type System = Test;
+		type DataProvider = <Test as Config>::DataProvider;
+		type Solver = <Test as Config>::Solver;
+		type WeightInfo = <Test as Config>::WeightInfo;
+	}
+
+	impl BoundedConfig for ElectionConfig {
+		type VotersBound = PhragmenMaxVoters;
+		type TargetsBound = PhragmenMaxCandidates;
+	}
+
+	pub struct DataProviderConfig;
+	impl election::DataProviderConfig for DataProviderConfig {
+		type System = Test;
+		type MaxVotesPerVoter = MaxVotesPerVoter;
+
+		fn candidates() -> Vec<AccountId> {
+			candidate_ids()
+		}
+
+		// TODO(gpestana): fix type signature
+		fn votes_with_stake() -> Vec<(AccountId, Voter<AccountId, AccountId>)> {
+			voters_and_stakes()
+		}
+	}
 
 	frame_support::construct_runtime!(
 		pub enum Test where
@@ -1465,6 +1491,12 @@ mod tests {
 
 	fn voter_deposit(who: &u64) -> u64 {
 		Elections::voting(who).deposit
+	}
+
+	fn voters_and_stakes() -> Vec<(u64, Voter<u64, u64>)> {
+		let max_voters = 10;
+		let voters: Vec<_> = Voting::<Test>::iter().collect();
+		voters
 	}
 
 	fn runners_up_ids() -> Vec<u64> {
@@ -2297,8 +2329,10 @@ mod tests {
 			assert_ok!(vote(RuntimeOrigin::signed(4), vec![4], 40));
 
 			System::set_block_number(5);
+
 			Elections::on_initialize(System::block_number());
 
+			// failing here
 			System::assert_last_event(RuntimeEvent::Elections(super::Event::NewTerm {
 				new_members: vec![(4, 35), (5, 45)],
 			}));
