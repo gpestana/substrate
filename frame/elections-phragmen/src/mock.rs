@@ -1,4 +1,4 @@
-use crate::{tests::*, BalanceOf};
+use crate::tests::*;
 
 use frame_election_provider_support::ElectionDataProvider;
 

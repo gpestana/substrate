@@ -1,11 +1,10 @@
-use sp_core::bounded;
-use sp_std::{collections::btree_map::BTreeMap, marker::PhantomData, prelude::*};
+use sp_std::{marker::PhantomData, prelude::*};
 
 use frame_election_provider_support::{
 	weights::WeightInfo, BoundedVec, ElectionDataProvider, ElectionProvider, ElectionProviderBase,
-	NposSolver, Voter, VoterOf,
+	InstantElectionProvider, NposSolver, VoterOf,
 };
-use frame_support::{dispatch::DispatchClass, traits::Get};
+use frame_support::traits::Get;
 use sp_npos_elections::*;
 
 type AccountId<T> = <T as frame_system::Config>::AccountId;
@@ -58,7 +57,6 @@ impl<T: DataProviderConfig> ElectionDataProvider for DataProvider<T> {
 			|(voter, crate::Voter { stake, votes, .. })| {
 				if let Some(max_voters) = maybe_max_len {
 					if voters_and_stakes.len() > max_voters {
-						println!("-- Failing ere!! {:?} {}", voters_and_stakes, max_voters);
 						return Err(());
 					}
 				}
@@ -87,26 +85,38 @@ impl<T: DataProviderConfig> ElectionDataProvider for DataProvider<T> {
 	}
 }
 
-/*
-// use frame_support_elections::BoundedExecution for now
 pub trait ElectionConfig {
 	type System: frame_system::Config;
 	type DataProvider: ElectionDataProvider<
-		AccountId = <Self::System as frame_system::Config>::AccountId,
-		BlockNumber = <Self::System as frame_system::Config>::BlockNumber,
+		AccountId = AccountId<Self::System>,
+		BlockNumber = BlockNumber<Self::System>,
 	>;
-	type Solver: NposSolver<
-		AccountId = <Self::System as frame_system::Config>::AccountId,
-		Error = sp_npos_elections::Error,
-	>;
+	type Solver: NposSolver<AccountId = AccountId<Self::System>, Error = sp_npos_elections::Error>;
 	type WeightInfo: WeightInfo;
 }
 
 pub struct BoundedExecution<T: ElectionConfig>(PhantomData<T>);
 
+fn elect_with_bounds<T: ElectionConfig>(
+	maybe_max_voters: Option<usize>,
+	maybe_max_targets: Option<usize>,
+) -> Result<Supports<AccountId<T::System>>, Error> {
+	// TODO(gpestana): finsh impl
+
+	// TODO(gpestana): handle unwraps()
+	let num_to_elect = T::DataProvider::desired_targets().unwrap();
+	let candidate_ids = T::DataProvider::electable_targets(maybe_max_targets).unwrap();
+	let voters_and_votes = T::DataProvider::electing_voters(maybe_max_voters).unwrap();
+
+	T::Solver::solve(num_to_elect as usize, candidate_ids, voters_and_votes)
+		.map(|election_result| {});
+
+	Ok(vec![])
+}
+
 impl<T: ElectionConfig> ElectionProviderBase for BoundedExecution<T> {
-	type AccountId = <T::System as frame_system::Config>::AccountId;
-	type BlockNumber = <T::System as frame_system::Config>::BlockNumber;
+	type AccountId = AccountId<T::System>;
+	type BlockNumber = BlockNumber<T::System>;
 	type Error = Error;
 	type DataProvider = T::DataProvider;
 
@@ -117,7 +127,24 @@ impl<T: ElectionConfig> ElectionProviderBase for BoundedExecution<T> {
 
 impl<T: ElectionConfig> ElectionProvider for BoundedExecution<T> {
 	fn elect() -> Result<frame_election_provider_support::Supports<Self::AccountId>, Self::Error> {
-		Err(Error::DataProvider("noop"))
+		// This should not be called if not in `std` mode (and therefore neither in genesis nor in
+		// testing)
+		if cfg!(not(feature = "std")) {
+			frame_support::log::error!(
+				"Please use `InstantElectionProvider` instead to provide bounds on election if not in \
+				genesis or testing mode"
+			);
+		}
+
+		elect_with_bounds::<T>(None, None)
 	}
 }
-*/
+
+impl<T: ElectionConfig> InstantElectionProvider for BoundedExecution<T> {
+	fn elect_with_bounds(
+		max_voters: usize,
+		max_targets: usize,
+	) -> Result<Supports<Self::AccountId>, Self::Error> {
+		elect_with_bounds::<T>(Some(max_voters), Some(max_targets))
+	}
+}

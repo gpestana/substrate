@@ -111,7 +111,6 @@ use frame_support::{
 	weights::Weight,
 };
 use scale_info::TypeInfo;
-use sp_npos_elections::{ElectionResult, ExtendedBalance};
 use sp_runtime::{
 	traits::{Saturating, StaticLookup, Zero},
 	DispatchError, Perbill, RuntimeDebug,
@@ -990,18 +989,14 @@ impl<T: Config> ContainsLengthBound for Pallet<T> {
 mod tests {
 	use super::*;
 	use crate as elections_phragmen;
-	use frame_election_provider_support::{
-		onchain::{BoundedConfig, BoundedExecution},
-		ElectionProviderBase, SequentialPhragmen,
-	};
+	use frame_election_provider_support::SequentialPhragmen;
 	use frame_support::{
 		assert_noop, assert_ok,
 		dispatch::DispatchResultWithPostInfo,
 		parameter_types,
 		traits::{ConstU32, ConstU64, OnInitialize},
-		BoundedVec,
 	};
-	use frame_system::{ensure_signed, Account};
+	use frame_system::ensure_signed;
 	use sp_core::H256;
 	use sp_runtime::{
 		testing::Header,
@@ -1137,7 +1132,8 @@ mod tests {
 		type MaxVoters = PhragmenMaxVoters;
 		type MaxCandidates = PhragmenMaxCandidates;
 		type MaxVotesPerVoter = MaxVotesPerVoter;
-		type ElectionProvider = BoundedExecution<ElectionConfig>;
+		//type ElectionProvider = BoundedExecution<ElectionConfig>;
+		type ElectionProvider = election::BoundedExecution<ElectionProviderConfig>;
 		//type DataProvider = mock::DataProvider;
 		type DataProvider = election::DataProvider<DataProviderConfig>;
 		type Solver = SequentialPhragmen<AccountId, Perbill>;
@@ -1149,17 +1145,12 @@ mod tests {
 	pub type AccountId = u64;
 	pub type BlockNumber = u64;
 
-	pub struct ElectionConfig;
-	impl frame_election_provider_support::onchain::Config for ElectionConfig {
+	pub struct ElectionProviderConfig;
+	impl election::ElectionConfig for ElectionProviderConfig {
 		type System = Test;
 		type DataProvider = <Test as Config>::DataProvider;
 		type Solver = <Test as Config>::Solver;
 		type WeightInfo = <Test as Config>::WeightInfo;
-	}
-
-	impl BoundedConfig for ElectionConfig {
-		type VotersBound = PhragmenMaxVoters;
-		type TargetsBound = PhragmenMaxCandidates;
 	}
 
 	pub struct DataProviderConfig;
