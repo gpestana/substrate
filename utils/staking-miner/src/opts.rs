@@ -53,6 +53,9 @@ pub(crate) enum Command {
 
 	/// Return information about the current version
 	Info(InfoOpts),
+
+	/// Staking and elections related data gathering for posterior analysis.
+	Analysis(AnalysisConfig),
 }
 
 #[derive(Debug, Clone, Parser)]
@@ -104,6 +107,26 @@ pub(crate) struct MonitorConfig {
 	/// if the scores are equal.
 	#[arg(long, default_value_t = 0)]
 	pub delay: usize,
+}
+
+#[derive(Debug, Clone, Parser)]
+#[cfg_attr(test, derive(PartialEq))]
+pub(crate) struct AnalysisConfig {
+	/// The block hash at which scraping happens. If none is provided, the latest head is used.
+	#[arg(long)]
+	pub at: Option<Hash>,
+
+	/// ETL
+	#[command(subcommand)]
+	pub command: crate::analysis::AnalysisCommand,
+
+	/// Force create a new snapshot, else expect one to exist onchain.
+	#[arg(long)]
+	pub force_snapshot: bool,
+
+	/// Path for the snapshot.
+	#[arg(long)]
+	pub path: String,
 }
 
 #[derive(Debug, Clone, Parser)]

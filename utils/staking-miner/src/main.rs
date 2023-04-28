@@ -32,6 +32,7 @@
 // see https://github.com/rust-lang/rust/issues/49112
 #![allow(unused_unsafe)]
 
+mod analysis;
 mod dry_run;
 mod emergency_solution;
 mod monitor;
@@ -75,6 +76,7 @@ macro_rules! construct_runtime_prelude {
 			pub(crate) use [<$runtime _runtime>]::*;
 			pub(crate) use crate::monitor::[<monitor_cmd_ $runtime>] as monitor_cmd;
 			pub(crate) use crate::dry_run::[<dry_run_cmd_ $runtime>] as dry_run_cmd;
+			pub(crate) use crate::analysis::[<analysis_cmd_ $runtime>] as analysis_cmd;
 			pub(crate) use crate::emergency_solution::[<emergency_solution_cmd_ $runtime>] as emergency_solution_cmd;
 			pub(crate) use private::{[<create_uxt_ $runtime>] as create_uxt};
 
@@ -633,7 +635,13 @@ async fn main() {
 					println!("{}", versions);
 				}
 				Ok(())
-			}
+				},
+			Command::Analysis(analysis_config) => {
+				analysis_cmd(rpc, analysis_config).await
+				.map_err(|e| {
+					log::error!(target: LOG_TARGET, "Analysis error: {:?}", e);
+				})
+			},
 		}
 	};
 	log::info!(target: LOG_TARGET, "round of execution finished. outcome = {:?}", outcome);
