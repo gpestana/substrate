@@ -127,6 +127,10 @@ pub(crate) struct AnalysisConfig {
 	/// Path for the snapshot.
 	#[arg(long)]
 	pub path: String,
+
+	/// Path for the csv output of transform.
+	#[arg(long)]
+	pub csv: String,
 }
 
 #[derive(Debug, Clone, Parser)]

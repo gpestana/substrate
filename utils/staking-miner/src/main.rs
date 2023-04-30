@@ -389,12 +389,17 @@ where
 }
 
 #[allow(unused)]
-fn mine_dpos<T: EPM::Config>(ext: &mut Ext) -> Result<(), Error<T>> {
+fn mine_dpos<T: EPM::Config>(ext: &mut Ext, bounded: bool) -> Result<(u128, u128, u128), Error<T>> {
 	ext.execute_with(|| {
 		use std::collections::BTreeMap;
-		use EPM::RoundSnapshot;
+		use EPM::{RoundSnapshot, SolutionOrSnapshotSize};
 		let RoundSnapshot { voters, .. } = EPM::Snapshot::<T>::get().unwrap();
-		let desired_targets = EPM::DesiredTargets::<T>::get().unwrap();
+		let SolutionOrSnapshotSize { targets, .. } = EPM::SnapshotMetadata::<T>::get().unwrap();
+
+		let desired_targets =
+			if bounded { EPM::DesiredTargets::<T>::get().unwrap() } else { targets };
+
+		log::info!(target: LOG_TARGET, "\n desired targets:: {:?}", desired_targets);
 		let mut candidates_and_backing = BTreeMap::<T::AccountId, u128>::new();
 		voters.into_iter().for_each(|(who, stake, targets)| {
 			if targets.is_empty() {
@@ -418,11 +423,12 @@ fn mine_dpos<T: EPM::Config>(ext: &mut Ext) -> Result<(), Error<T>> {
 		let score = {
 			let min_staker = *winners.last().map(|(_, stake)| stake).unwrap();
 			let sum_stake = winners.iter().fold(0u128, |acc, (_, stake)| acc + stake);
-			let sum_squared = winners.iter().fold(0u128, |acc, (_, stake)| acc + stake);
-			[min_staker, sum_stake, sum_squared]
+			let sum_squared = winners.iter().fold(0u128, |acc, (_, stake)| acc + stake); // TODO: not correct.
+			(min_staker, sum_stake, sum_squared)
 		};
-		println!("mined a dpos-like solution with score = {:?}", score);
-		Ok(())
+		log::info!(target: LOG_TARGET, "\nmined a dpos-like solution with score = {:?}", score);
+
+		Ok(score)
 	})
 }
 

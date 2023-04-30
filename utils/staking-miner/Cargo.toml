@@ -11,7 +11,7 @@ tracing-subscriber = { version = "0.3.11", features = ["env-filter"] }
 jsonrpsee = { version = "0.16.2", features = ["ws-client", "macros"] }
 log = "0.4.17"
 paste = "1.0.7"
-serde = "1.0.137"
+serde = { version = "1.0.137", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0.31"
 tokio = { version = "1.24.2", features = ["macros", "rt-multi-thread", "sync"] }
@@ -43,6 +43,7 @@ exitcode = "1.1"
 sub-tokens = { git = "https://github.com/paritytech/substrate-debug-kit", branch = "master" }
 signal-hook = "0.3"
 futures-util = "0.3"
+csv = "1.1"
 
 [dev-dependencies]
 assert_cmd = "2.0.4"

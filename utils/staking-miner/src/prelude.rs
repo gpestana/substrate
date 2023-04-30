@@ -43,6 +43,9 @@ pub const LOG_TARGET: &str = "staking-miner";
 /// The election provider pallet.
 pub use pallet_election_provider_multi_phase as EPM;
 
+// The staking pallet.
+pub use pallet_staking as Staking;
+
 /// The externalities type.
 pub type Ext = sp_io::TestExternalities;
 
